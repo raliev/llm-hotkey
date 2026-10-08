@@ -2,3 +2,4 @@ text_hotkey
 *.o
 .DS_Store
 config.json
+dist/

@@ -329,13 +329,15 @@ func systemSpeak(_ text: String) {
 
 // ── Ticking (while waiting for the LLM) ──────────────────────────────────────
 
-/// ticking.mp3 is looked up next to the binary (symlinks resolved), then in ~/.config/text-hotkey.
+/// ticking.mp3 is looked up in the .app's Resources, next to the binary (symlinks resolved),
+/// then in ~/.config/text-hotkey.
 let tickingPlayer: AVAudioPlayer? = {
     let exe = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
     let candidates = [
+        Bundle.main.url(forResource: "ticking", withExtension: "mp3"),
         exe.deletingLastPathComponent().appendingPathComponent("ticking.mp3"),
         URL(fileURLWithPath: configDir).appendingPathComponent("ticking.mp3"),
-    ]
+    ].compactMap { $0 }
     guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
           let p = try? AVAudioPlayer(contentsOf: url) else {
         log("ticking.mp3 not found — no ticking sound")

@@ -18,7 +18,23 @@ While the LLM is working, a clock ticks and the menu-bar icon turns into an hour
 3. Waits for the pasteboard to change (no fixed sleep), sends the text to the selected provider.
 4. Pastes the result with ⌘V, then **restores your previous clipboard contents**.
 
-## Build & run
+## Download (no compiling needed)
+
+1. Download `LLM-Hotkey-<version>.zip` from [Releases](https://github.com/raliev/llm-hotkey/releases/latest) and unzip it. It's a universal build for Apple Silicon and Intel, macOS 12+.
+2. Move **LLM Hotkey.app** to `/Applications`.
+3. The app isn't notarized by Apple, so the first launch is blocked. Either right-click the app → **Open** → **Open**, or run:
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/LLM Hotkey.app"
+   ```
+   On macOS 15+, if right-click → Open doesn't offer it: System Settings → Privacy & Security → **Open Anyway**.
+4. Grant **Accessibility** to *LLM Hotkey* when asked (System Settings → Privacy & Security → Accessibility), then quit and relaunch it from the menu-bar icon.
+5. Click the menu-bar icon → **Edit config…**, put in your API key, then **Reload config**.
+
+When launched from Finder, the app does not see `OPENAI_API_KEY` / `GEMINI_API_KEY` from your shell, so put the keys in the config file.
+
+To start it automatically: System Settings → General → Login Items → add *LLM Hotkey*.
+
+## Build from source
 
 ```bash
 ./build.sh          # swiftc → ./text_hotkey
@@ -26,6 +42,8 @@ While the LLM is working, a clock ticks and the menu-bar icon turns into an hour
 ```
 
 Requires macOS 12+ and the Xcode command line tools.
+
+To build the universal `.app` and the release zip: `./build-app.sh 1.0.0` → `dist/`.
 
 **Accessibility permission** is required to send ⌘C/⌘V: System Settings → Privacy & Security → Accessibility. If you run the binary from a terminal, grant it to the terminal app.
 
