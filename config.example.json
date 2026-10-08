@@ -1,0 +1,35 @@
+{
+  "actions": {
+    "grammar": {
+      "hotkeys": [
+        "cmd+opt+g",
+        "f6"
+      ],
+      "prompt": "Correct grammatical, spelling and punctuation errors in the user's text. Do not change the text if there are no errors; if there are, change it minimally. Keep the original language and formatting. Return only the corrected text, without quotes or comments."
+    },
+    "rephrase": {
+      "hotkeys": [
+        "cmd+opt+r"
+      ],
+      "prompt": "Rephrase the user's text to make it clearer and more natural, keeping its meaning, language and approximate length. Return only the rephrased text, without quotes or comments."
+    },
+    "speak": {
+      "hotkeys": [
+        "cmd+opt+s"
+      ]
+    },
+    "translate": {
+      "hotkeys": [
+        "cmd+opt+t",
+        "f5"
+      ],
+      "prompt": "Translate the user's text. If it is in Russian, translate it into English; otherwise translate it into Russian. Preserve formatting, line breaks and tone. Return only the translated text, without quotes or comments."
+    }
+  },
+  "gemini_api_key": "",
+  "gemini_model": "gemini-2.5-flash",
+  "openai_api_key": "",
+  "openai_model": "gpt-5.1",
+  "provider": "openai",
+  "restore_clipboard": true
+}
