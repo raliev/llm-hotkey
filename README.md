@@ -27,8 +27,10 @@ While the LLM is working, a clock ticks and the menu-bar icon turns into an hour
    xattr -dr com.apple.quarantine "/Applications/LLM Hotkey.app"
    ```
    On macOS 15+, if right-click → Open doesn't offer it: System Settings → Privacy & Security → **Open Anyway**.
-4. Grant **Accessibility** to *LLM Hotkey* when asked (System Settings → Privacy & Security → Accessibility), then quit and relaunch it from the menu-bar icon.
-5. Click the menu-bar icon → **Edit config…**, put in your API key, then **Reload config**.
+4. Grant **Accessibility** to *LLM Hotkey* when asked (System Settings → Privacy & Security → Accessibility), then quit (⌘Q) and relaunch it.
+5. In the status window (or the menu-bar icon) click **Edit config…**, put in your API key, then **Reload config**.
+
+The app behaves like a normal Mac app: it has a Dock icon, and at launch it opens a status window showing the Accessibility permission, the provider, and the hotkeys. Closing the window keeps the app running; open it again by clicking the Dock icon, launching the app again (only one copy ever runs), or using the menu-bar icon. To stop it: ⌘Q, Dock icon → Quit, or **Quit** in the window or menu. Turn off **Show this window at launch** if it's a login item.
 
 When launched from Finder, the app does not see `OPENAI_API_KEY` / `GEMINI_API_KEY` from your shell, so put the keys in the config file.
 
@@ -55,6 +57,7 @@ On first run a config is created at `~/.config/text-hotkey/config.json` (see [`c
 - `openai_api_key`, `gemini_api_key`: or use the `OPENAI_API_KEY` / `GEMINI_API_KEY` environment variables
 - `openai_model`, `gemini_model`
 - `restore_clipboard`: put the previous clipboard contents back after pasting
+- `show_window_on_launch`: open the status window at launch (it opens anyway if Accessibility is missing)
 - `actions.<name>.hotkeys`: e.g. `"cmd+opt+t"`, `"ctrl+shift+x"`, `"f5"` (modifiers: `cmd`, `opt`, `ctrl`, `shift`)
 - `actions.<name>.prompt`: the system prompt for that action
 

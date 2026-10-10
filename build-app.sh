@@ -14,9 +14,20 @@ for arch in arm64 x86_64; do
     swiftc -O -target "$arch-apple-macos12" -o "dist/obj/text_hotkey-$arch" text_hotkey.swift $FRAMEWORKS
 done
 lipo -create -output "$APP/Contents/MacOS/llm-hotkey" dist/obj/text_hotkey-arm64 dist/obj/text_hotkey-x86_64
-rm -rf dist/obj
 
 cp ticking.mp3 "$APP/Contents/Resources/"
+
+# App icon: render 1024px PNG, then scale into an .iconset and pack as .icns
+swiftc -O -o dist/obj/make_icon make_icon.swift -framework Cocoa
+dist/obj/make_icon dist/obj/icon.png
+ICONSET=dist/obj/AppIcon.iconset
+mkdir -p "$ICONSET"
+for s in 16 32 128 256 512; do
+    sips -z $s $s dist/obj/icon.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+    sips -z $((s * 2)) $((s * 2)) dist/obj/icon.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+done
+iconutil -c icns -o "$APP/Contents/Resources/AppIcon.icns" "$ICONSET"
+rm -rf dist/obj
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -31,7 +42,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
     <key>LSMinimumSystemVersion</key><string>12.0</string>
-    <key>LSUIElement</key><true/>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

@@ -31,5 +31,6 @@
   "openai_api_key": "",
   "openai_model": "gpt-5.1",
   "provider": "openai",
-  "restore_clipboard": true
+  "restore_clipboard": true,
+  "show_window_on_launch": true
 }

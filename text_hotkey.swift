@@ -32,6 +32,7 @@ let defaultConfig: [String: Any] = [
     "gemini_api_key": "",
     "gemini_model": "gemini-2.5-flash",
     "restore_clipboard": true,
+    "show_window_on_launch": true,
     "actions": [
         "translate": [
             "hotkeys": ["cmd+opt+t", "f5"],
@@ -75,10 +76,10 @@ func loadConfig() {
     config = c
 }
 
-func saveProvider(_ provider: String) {
+func saveConfigValue(_ key: String, _ value: Any) {
     guard let data = FileManager.default.contents(atPath: configPath),
           var obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
-    obj["provider"] = provider
+    obj[key] = value
     if let out = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) {
         try? out.write(to: URL(fileURLWithPath: configPath))
     }
@@ -392,6 +393,173 @@ func speak(_ text: String, done: @escaping (String?) -> Void) {
     }
 }
 
+// ── Status window ────────────────────────────────────────────────────────────
+
+/// Shown at launch and whenever the app is reopened (Dock click, second launch),
+/// so it is always clear that the app is running and how to quit it.
+final class StatusWindow: NSObject, NSWindowDelegate {
+    let window: NSWindow
+    private let stack = NSStackView()
+    private var axTimer: Timer?
+
+    override init() {
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 300),
+                          styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        super.init()
+        window.title = "LLM Hotkey"
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        window.contentView = stack
+        stack.widthAnchor.constraint(equalToConstant: 440).isActive = true
+    }
+
+    func show() {
+        refresh()
+        if !window.isVisible { window.center() }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func refresh() {
+        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let app = NSApp.delegate as! App
+
+        let title = NSTextField(labelWithString: "LLM Hotkey is running")
+        title.font = .boldSystemFont(ofSize: 15)
+        stack.addArrangedSubview(title)
+
+        let trusted = AXIsProcessTrusted()
+        let ax = NSTextField(wrappingLabelWithString: trusted
+            ? "✅  Accessibility permission granted"
+            : "⚠️  Accessibility permission is missing: hotkeys can't copy or paste text. Grant it, then quit and relaunch the app.")
+        ax.preferredMaxLayoutWidth = 400
+        stack.addArrangedSubview(ax)
+        if !trusted {
+            stack.addArrangedSubview(button("Open Accessibility Settings…", #selector(openAccessibility)))
+        }
+        // While permission is missing, poll so the window updates once it is granted.
+        axTimer?.invalidate()
+        axTimer = trusted ? nil : Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            if AXIsProcessTrusted(), self?.window.isVisible == true { self?.refresh() }
+        }
+
+        let provider = cfg("provider")
+        var p = "Provider: \(provider == "gemini" ? "Gemini" : "OpenAI") (\(cfg("\(provider)_model")))"
+        if apiKey(provider).isEmpty { p += " — ⚠️ no API key, use Edit config…" }
+        stack.addArrangedSubview(NSTextField(labelWithString: p))
+
+        let keys = actions().filter { !$0.hotkeys.isEmpty }
+            .map { "\($0.name): \($0.hotkeys.joined(separator: ", "))" }.joined(separator: "\n")
+        let hk = NSTextField(labelWithString: "Hotkeys:\n" + keys)
+        hk.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(hk)
+
+        if let e = app.lastError {
+            let err = NSTextField(wrappingLabelWithString: "Last error: \(e)")
+            err.textColor = .systemRed
+            err.preferredMaxLayoutWidth = 400
+            stack.addArrangedSubview(err)
+        }
+
+        let hint = NSTextField(wrappingLabelWithString: "Closing this window keeps the app running (Dock and menu-bar icon). To stop it, use Quit (⌘Q).")
+        hint.textColor = .secondaryLabelColor
+        hint.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        hint.preferredMaxLayoutWidth = 400
+        stack.addArrangedSubview(hint)
+
+        let check = NSButton(checkboxWithTitle: "Show this window at launch", target: self, action: #selector(toggleShowAtLaunch(_:)))
+        check.state = (config["show_window_on_launch"] as? Bool ?? true) ? .on : .off
+        stack.addArrangedSubview(check)
+
+        let buttons = NSStackView(views: [
+            button("Edit config…", #selector(App.openConfig), target: app),
+            button("Reload config", #selector(App.reloadMenu), target: app),
+            button("Quit", #selector(NSApplication.terminate(_:)), target: NSApp),
+        ])
+        buttons.spacing = 8
+        stack.addArrangedSubview(buttons)
+
+        window.setContentSize(stack.fittingSize)
+    }
+
+    private func button(_ title: String, _ action: Selector, target: AnyObject? = nil) -> NSButton {
+        NSButton(title: title, target: target ?? self, action: action)
+    }
+
+    @objc func openAccessibility() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+    }
+
+    @objc func toggleShowAtLaunch(_ sender: NSButton) {
+        saveConfigValue("show_window_on_launch", sender.state == .on)
+        config["show_window_on_launch"] = sender.state == .on
+    }
+
+    func windowWillClose(_ n: Notification) {
+        axTimer?.invalidate()
+        axTimer = nil
+    }
+}
+
+func buildMainMenu() {
+    let main = NSMenu()
+    let appMenu = NSMenu()
+    appMenu.addItem(withTitle: "About LLM Hotkey", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+    appMenu.addItem(.separator())
+    appMenu.addItem(withTitle: "Show Status Window", action: #selector(App.showStatus), keyEquivalent: "0")
+    appMenu.addItem(withTitle: "Edit config…", action: #selector(App.openConfig), keyEquivalent: ",")
+    appMenu.addItem(withTitle: "Reload config", action: #selector(App.reloadMenu), keyEquivalent: "r")
+    appMenu.addItem(.separator())
+    appMenu.addItem(withTitle: "Hide LLM Hotkey", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+    appMenu.addItem(.separator())
+    appMenu.addItem(withTitle: "Quit LLM Hotkey", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    let appItem = NSMenuItem()
+    appItem.submenu = appMenu
+    main.addItem(appItem)
+
+    let windowMenu = NSMenu(title: "Window")
+    windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+    windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+    let windowItem = NSMenuItem()
+    windowItem.submenu = windowMenu
+    main.addItem(windowItem)
+    NSApp.windowsMenu = windowMenu
+    NSApp.mainMenu = main
+}
+
+// ── Single instance ──────────────────────────────────────────────────────────
+
+let showStatusNotification = Notification.Name("com.raliev.llm-hotkey.show")
+let lockPath = (configDir as NSString).appendingPathComponent("app.lock")
+
+/// Holds an flock on app.lock for the life of the process. If another instance
+/// already holds it, ask that one to show its window and return false.
+func acquireSingleInstanceLock() -> Bool {
+    try? FileManager.default.createDirectory(atPath: configDir, withIntermediateDirectories: true)
+    let fd = open(lockPath, O_RDWR | O_CREAT, 0o600)
+    guard fd >= 0 else { return true }   // can't lock: don't block startup
+    if flock(fd, LOCK_EX | LOCK_NB) == 0 {
+        ftruncate(fd, 0)
+        let pid = "\(getpid())"
+        _ = pid.withCString { write(fd, $0, strlen($0)) }
+        return true   // fd stays open on purpose: the lock lives as long as the process
+    }
+    if let s = try? String(contentsOfFile: lockPath, encoding: .utf8),
+       let pid = pid_t(s.trimmingCharacters(in: .whitespacesAndNewlines)),
+       let other = NSRunningApplication(processIdentifier: pid) {
+        other.activate(options: [])
+    }
+    DistributedNotificationCenter.default().postNotificationName(showStatusNotification, object: nil,
+                                                                   userInfo: nil, deliverImmediately: true)
+    close(fd)
+    return false
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 
 final class App: NSObject, NSApplicationDelegate {
@@ -399,19 +567,46 @@ final class App: NSObject, NSApplicationDelegate {
     var busy = false
     var hotKeyRefs: [EventHotKeyRef] = []
     var actionByID: [UInt32: Action] = [:]
+    var lastError: String?
+    lazy var statusWindow = StatusWindow()
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        buildMainMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         setIcon(idle: true)
         installHotkeyHandler()
         reload()
+
+        DistributedNotificationCenter.default().addObserver(self, selector: #selector(showStatus),
+                                                            name: showStatusNotification, object: nil,
+                                                            suspensionBehavior: .deliverImmediately)
 
         let trusted = AXIsProcessTrustedWithOptions(
             [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
         if !trusted {
             log("⚠️  Accessibility permission is required to send Cmd+C/Cmd+V. Grant it in System Settings → Privacy & Security → Accessibility (for your terminal app if you run from a terminal), then restart.")
         }
+        if !trusted || (config["show_window_on_launch"] as? Bool ?? true) {
+            showStatus()
+        }
     }
+
+    // Dock icon click / Finder launch while already running
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        showStatus()
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Show Status Window", action: #selector(showStatus), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Edit config…", action: #selector(openConfig), keyEquivalent: "").target = self
+        return menu
+    }
+
+    @objc func showStatus() { statusWindow.show() }
 
     func setIcon(idle: Bool, error: Bool = false) {
         let name = error ? "exclamationmark.triangle" : (idle ? "character.bubble" : "hourglass")
@@ -420,6 +615,8 @@ final class App: NSObject, NSApplicationDelegate {
 
     func flashError(_ msg: String) {
         log("ERROR: \(msg)")
+        lastError = msg
+        if statusWindow.window.isVisible { statusWindow.refresh() }
         NSSound(named: "Funk")?.play()
         setIcon(idle: true, error: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -447,6 +644,7 @@ final class App: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Show status window", action: #selector(showStatus), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Stop speaking", action: #selector(stopSpeech), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Edit config…", action: #selector(openConfig), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Reload config", action: #selector(reloadMenu), keyEquivalent: "").target = self
@@ -457,7 +655,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     @objc func selectProvider(_ sender: NSMenuItem) {
         guard let p = sender.representedObject as? String else { return }
-        saveProvider(p)
+        saveConfigValue("provider", p)
         reload()
         log("provider → \(p)")
     }
@@ -504,6 +702,7 @@ final class App: NSObject, NSApplicationDelegate {
             }
         }
         buildMenu()
+        if statusWindow.window.isVisible { statusWindow.refresh() }
     }
 
     // Action pipeline: wait for modifiers → Cmd+C → LLM → Cmd+V → restore clipboard
@@ -562,9 +761,14 @@ final class App: NSObject, NSApplicationDelegate {
     }
 }
 
+guard acquireSingleInstanceLock() else {
+    log("already running — showed the existing instance's window")
+    exit(0)
+}
+
 let app = NSApplication.shared
 let delegate = App()
 app.delegate = delegate
-app.setActivationPolicy(.accessory)
+app.setActivationPolicy(.regular)   // Dock icon + app menu, like a normal app
 log("text-hotkey started; config: \(configPath)")
 app.run()
